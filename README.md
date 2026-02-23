@@ -149,6 +149,42 @@ interface Point { x: number;     y: number;      }
 
 ---
 
+## Publishing to npm
+
+The `.github/workflows/publish.yml` workflow publishes the package automatically when a GitHub Release is created (or manually via `workflow_dispatch`).
+
+### Setting up the npm token for 2FA-enabled accounts
+
+When your npm account has **"Require 2FA for write actions"** enabled, a regular publish token will be rejected in CI because there is no way to enter the OTP interactively. You must use an **automation-type** token, which bypasses the 2FA OTP requirement while still being protected by your account's 2FA for interactive logins.
+
+**Steps:**
+
+1. Log in to [npmjs.com](https://www.npmjs.com) and go to **Account Settings → Access Tokens**.
+2. Click **Generate New Token** and choose one of:
+   - **Granular Access Token** (recommended) — select the package, set permission to **Read and Write**, and set "Require 2FA" to **No (automation token)**.
+   - **Classic Token** — choose type **Automation**. Automation tokens bypass 2FA for CI/CD publish operations.
+3. Copy the generated token.
+4. In your GitHub repository, go to **Settings → Secrets and variables → Actions** and add a secret named **`NPM_TOKEN`** with the token value.
+
+The workflow then runs:
+
+```bash
+npm publish --provenance --access public
+```
+
+- `--provenance` attaches a signed OIDC attestation (requires the `id-token: write` permission in the workflow) so package consumers can verify the build came from this GitHub Actions workflow.
+- `--access public` is required for scoped packages (`@scope/pkg`) to be published publicly.
+
+### Summary
+
+| Token type | Bypasses 2FA OTP in CI | Notes |
+| --- | --- | --- |
+| Classic — **Publish** | ❌ | Requires OTP; not usable in CI with 2FA |
+| Classic — **Automation** | ✅ | Use this for CI/CD |
+| Granular Access Token | ✅ | Fine-grained control; recommended |
+
+---
+
 ## License
 
 [MIT](LICENSE)

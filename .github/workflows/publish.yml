@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  # Required for npm provenance (OIDC token used to sign the package attestation)
   id-token: write
 
 jobs:
@@ -24,6 +25,14 @@ jobs:
 
       - run: npm run build
 
+      # NPM_TOKEN must be a "Granular Access Token" or a classic "Automation"
+      # token created on npmjs.com. Automation-type tokens bypass the npm 2FA
+      # OTP prompt so that publishing works in CI even when
+      # "Require 2FA for write actions" is enabled on your npm account.
+      # See: https://docs.npmjs.com/creating-and-viewing-access-tokens
+      #
+      # --provenance attaches a signed OIDC attestation so consumers can verify
+      # that the package was built by this GitHub Actions workflow.
       - run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
