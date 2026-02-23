@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import styled from 'styled-components';
+import './ImageCropper.css';
 
 /* ───────────────────────── Types ────────────────────────────────── */
 
@@ -9,139 +9,20 @@ type DragMode =
   | { kind: 'corner'; corner: CornerPos }
   | { kind: 'move'; startX: number; startY: number; startOffset: Point };
 
-interface Props {
+export interface ImageCropperProps {
   minCropWidth?: number;
   minCropHeight?: number;
 }
 
-interface Size {
+export interface Size {
   width: number;
   height: number;
 }
 
-interface Point {
+export interface Point {
   x: number;
   y: number;
 }
-
-/* ───────────────────────── Styled Components ───────────────────── */
-
-const Container = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-height: 100vh;
-  padding: 16px;
-  gap: 16px;
-`;
-
-const Workspace = styled.div`
-  position: relative;
-  width: 100%;
-  max-width: 900px;
-  height: 65vh;
-  overflow: hidden;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-`;
-
-const ImageElement = styled.img<{ $rotation: number }>`
-  display: block;
-  max-width: 70%;
-  max-height: 70%;
-  transform: rotate(${(p) => p.$rotation}deg);
-  user-select: none;
-  -webkit-user-drag: none;
-`;
-
-const CropOverlay = styled.div`
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  border: 2px solid black;
-  pointer-events: none;
-  z-index: 2;
-`;
-
-const CropMoveHandle = styled.div`
-  position: absolute;
-  inset: 0;
-  cursor: move;
-  pointer-events: auto;
-  z-index: 2;
-`;
-
-const CornerMarker = styled.div<{ $pos: CornerPos }>`
-  position: absolute;
-  width: 12px;
-  height: 12px;
-  border: 2px solid black;
-  background: transparent;
-  pointer-events: auto;
-  z-index: 3;
-
-  ${(p) => (p.$pos === 'tl' ? 'top:-6px;left:-6px;cursor:nw-resize;' : '')}
-  ${(p) => (p.$pos === 'tr' ? 'top:-6px;right:-6px;cursor:ne-resize;' : '')}
-  ${(p) => (p.$pos === 'bl' ? 'bottom:-6px;left:-6px;cursor:sw-resize;' : '')}
-  ${(p) => (p.$pos === 'br' ? 'bottom:-6px;right:-6px;cursor:se-resize;' : '')}
-`;
-
-const Controls = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  max-width: 500px;
-  padding: 12px 16px;
-`;
-
-const ControlLabel = styled.div`
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 1.2px;
-`;
-
-const SliderRow = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-`;
-
-const RangeLabel = styled.span`
-  font-size: 0.8rem;
-  min-width: 36px;
-  text-align: center;
-`;
-
-const Slider = styled.input.attrs({ type: 'range' })`
-  flex: 1;
-`;
-
-const AngleDisplay = styled.div`
-  font-size: 1.5rem;
-  font-weight: 600;
-`;
-
-const ResetButton = styled.button`
-  padding: 6px 12px;
-  cursor: pointer;
-`;
-
-const ButtonRow = styled.div`
-  display: flex;
-  gap: 10px;
-`;
-
-const EmptyState = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  font-size: 0.95rem;
-`;
 
 /* ───────────────────────── Geometry helpers ─────────────────────── */
 
@@ -300,10 +181,10 @@ function clampOffset(
 
 /* ───────────────────────── Component ────────────────────────────── */
 
-export default function ImageCropper({
+export function ImageCropper({
   minCropWidth = 250,
   minCropHeight = 250,
-}: Props) {
+}: ImageCropperProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [rotation, setRotation] = useState(0);
   const [displaySize, setDisplaySize] = useState<Size>({ width: 0, height: 0 });
@@ -494,61 +375,66 @@ export default function ImageCropper({
 
   /* ── Render ── */
   return (
-    <Container>
+    <div className="cropper-container">
       <input type="file" accept="image/*" onChange={handleUpload} />
 
-      <Workspace ref={workspaceRef}>
+      <div className="cropper-workspace" ref={workspaceRef}>
         {imageSrc ? (
           <>
-            <ImageElement
+            <img
+              className="cropper-image"
               ref={imgRef}
               src={imageSrc}
-              $rotation={rotation}
+              style={{ transform: `rotate(${rotation}deg)` }}
               onLoad={syncDisplaySize}
               alt="preview"
             />
 
             {displaySize.width > 0 && (
-              <CropOverlay
+              <div
+                className="cropper-overlay"
                 style={{
                   width: effectiveCrop.width,
                   height: effectiveCrop.height,
                   transform: `translate(calc(-50% + ${effectiveOffset.x}px), calc(-50% + ${effectiveOffset.y}px))`,
                 }}
               >
-                <CropMoveHandle onMouseDown={handleMoveMouseDown} />
-                <CornerMarker $pos="tl" onMouseDown={(e) => handleCornerMouseDown('tl', e)} />
-                <CornerMarker $pos="tr" onMouseDown={(e) => handleCornerMouseDown('tr', e)} />
-                <CornerMarker $pos="bl" onMouseDown={(e) => handleCornerMouseDown('bl', e)} />
-                <CornerMarker $pos="br" onMouseDown={(e) => handleCornerMouseDown('br', e)} />
-              </CropOverlay>
+                <div className="cropper-move-handle" onMouseDown={handleMoveMouseDown} />
+                <div className="cropper-corner cropper-corner--tl" onMouseDown={(e) => handleCornerMouseDown('tl', e)} />
+                <div className="cropper-corner cropper-corner--tr" onMouseDown={(e) => handleCornerMouseDown('tr', e)} />
+                <div className="cropper-corner cropper-corner--bl" onMouseDown={(e) => handleCornerMouseDown('bl', e)} />
+                <div className="cropper-corner cropper-corner--br" onMouseDown={(e) => handleCornerMouseDown('br', e)} />
+              </div>
             )}
           </>
         ) : (
-          <EmptyState>
+          <div className="cropper-empty">
             <span>Open an image to get started</span>
-          </EmptyState>
+          </div>
         )}
-      </Workspace>
+      </div>
 
       {imageSrc && (
-        <Controls>
-          <ControlLabel>Rotation</ControlLabel>
-          <SliderRow>
-            <RangeLabel>-{maxRotation}°</RangeLabel>
-            <Slider
+        <div className="cropper-controls">
+          <div className="cropper-label">Rotation</div>
+          <div className="cropper-slider-row">
+            <span className="cropper-range-label">-{maxRotation}°</span>
+            <input
+              className="cropper-slider"
+              type="range"
               min={-maxRotation}
               max={maxRotation}
               step={0.1}
               value={Math.max(-maxRotation, Math.min(maxRotation, rotation))}
               onChange={handleRotationChange}
             />
-            <RangeLabel>{maxRotation}°</RangeLabel>
-          </SliderRow>
-          <AngleDisplay>{rotation.toFixed(1)}°</AngleDisplay>
-          <ButtonRow>
+            <span className="cropper-range-label">{maxRotation}°</span>
+          </div>
+          <div className="cropper-angle">{rotation.toFixed(1)}°</div>
+          <div className="cropper-button-row">
             {rotation !== 0 && (
-              <ResetButton
+              <button
+                className="cropper-button"
                 onClick={() => {
                   setRotation(0);
                   setCropSize(null);
@@ -556,14 +442,14 @@ export default function ImageCropper({
                 }}
               >
                 Reset Rotation
-              </ResetButton>
+              </button>
             )}
             {(cropSize || cropOffset.x !== 0 || cropOffset.y !== 0) && (
-              <ResetButton onClick={resetCrop}>Reset Crop</ResetButton>
+              <button className="cropper-button" onClick={resetCrop}>Reset Crop</button>
             )}
-          </ButtonRow>
-        </Controls>
+          </div>
+        </div>
       )}
-    </Container>
+    </div>
   );
 }
