@@ -191,6 +191,7 @@ export function ImageCropper({
   const [cropSize, setCropSize] = useState<Size | null>(null);
   const [cropOffset, setCropOffset] = useState<Point>({ x: 0, y: 0 });
   const [drag, setDrag] = useState<DragMode | null>(null);
+  const [baseRotation, setBaseRotation] = useState(0);
 
   const imgRef = useRef<HTMLImageElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -203,6 +204,7 @@ export function ImageCropper({
       if (imageSrc) URL.revokeObjectURL(imageSrc);
       setImageSrc(URL.createObjectURL(file));
       setRotation(0);
+      setBaseRotation(0);
       setCropSize(null);
       setCropOffset({ x: 0, y: 0 });
     },
@@ -227,16 +229,24 @@ export function ImageCropper({
     return () => ro.disconnect();
   }, [imageSrc, syncDisplaySize]);
 
+  /* ── Effective image dimensions (swap W/H for 90°/270° base rotation) ── */
+  const effectiveDims = useMemo<Size>(() => {
+    const swapped = baseRotation === 90 || baseRotation === 270;
+    return swapped
+      ? { width: displaySize.height, height: displaySize.width }
+      : displaySize;
+  }, [displaySize, baseRotation]);
+
   /* ── Effective crop dimensions (needed by drag handlers) ── */
   const effectiveCrop = useMemo<Size>(() => {
     if (cropSize)
       return clampCropDims(
         cropSize.width, cropSize.height,
-        displaySize.width, displaySize.height,
+        effectiveDims.width, effectiveDims.height,
         rotation, minCropWidth, minCropHeight,
       );
-    return computeCropSize(displaySize.width, displaySize.height, rotation);
-  }, [cropSize, displaySize, rotation, minCropWidth, minCropHeight]);
+    return computeCropSize(effectiveDims.width, effectiveDims.height, rotation);
+  }, [cropSize, effectiveDims, rotation, minCropWidth, minCropHeight]);
 
   /* ── Start corner resize ── */
   const handleCornerMouseDown = useCallback(
@@ -290,7 +300,7 @@ export function ImageCropper({
           clampOffset(
             rawX, rawY,
             effectiveCrop.width, effectiveCrop.height,
-            displaySize.width, displaySize.height,
+            effectiveDims.width, effectiveDims.height,
             rotation,
           ),
         );
@@ -315,7 +325,7 @@ export function ImageCropper({
       setCropSize(
         clampCropDims(
           desiredW, desiredH,
-          displaySize.width, displaySize.height,
+          effectiveDims.width, effectiveDims.height,
           rotation, minCropWidth, minCropHeight,
         ),
       );
@@ -332,15 +342,15 @@ export function ImageCropper({
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-  }, [drag, displaySize, rotation, effectiveCrop, minCropWidth, minCropHeight]);
+  }, [drag, effectiveDims, rotation, effectiveCrop, minCropWidth, minCropHeight]);
 
   /* ── Max rotation ── */
   const maxRotation = useMemo(
     () =>
-      displaySize.width > 0 && displaySize.height > 0
-        ? findMaxRotation(displaySize.width, displaySize.height, cropSize, minCropWidth, minCropHeight)
+      effectiveDims.width > 0 && effectiveDims.height > 0
+        ? findMaxRotation(effectiveDims.width, effectiveDims.height, cropSize, minCropWidth, minCropHeight)
         : 45,
-    [displaySize, cropSize, minCropWidth, minCropHeight],
+    [effectiveDims, cropSize, minCropWidth, minCropHeight],
   );
 
   useEffect(() => {
@@ -353,10 +363,10 @@ export function ImageCropper({
       clampOffset(
         cropOffset.x, cropOffset.y,
         effectiveCrop.width, effectiveCrop.height,
-        displaySize.width, displaySize.height,
+        effectiveDims.width, effectiveDims.height,
         rotation,
       ),
-    [cropOffset, effectiveCrop, displaySize, rotation],
+    [cropOffset, effectiveCrop, effectiveDims, rotation],
   );
 
   /* ── Resets ── */
@@ -373,6 +383,29 @@ export function ImageCropper({
     [],
   );
 
+  /* ── 90°/180° rotation ── */
+  const can90 = useMemo(() => {
+    const newBase = (baseRotation + 90) % 360;
+    const swapped = newBase === 90 || newBase === 270;
+    const w = swapped ? displaySize.height : displaySize.width;
+    const h = swapped ? displaySize.width : displaySize.height;
+    return w >= minCropWidth && h >= minCropHeight;
+  }, [displaySize, baseRotation, minCropWidth, minCropHeight]);
+
+  const handleRotate90 = useCallback(() => {
+    setBaseRotation((prev) => (prev + 90) % 360);
+    setRotation(0);
+    setCropSize(null);
+    setCropOffset({ x: 0, y: 0 });
+  }, []);
+
+  const handleRotate180 = useCallback(() => {
+    setBaseRotation((prev) => (prev + 180) % 360);
+    setRotation(0);
+    setCropSize(null);
+    setCropOffset({ x: 0, y: 0 });
+  }, []);
+
   /* ── Render ── */
   return (
     <div className="cropper-container">
@@ -385,7 +418,7 @@ export function ImageCropper({
               className="cropper-image"
               ref={imgRef}
               src={imageSrc}
-              style={{ transform: `rotate(${rotation}deg)` }}
+              style={{ transform: `rotate(${baseRotation + rotation}deg)` }}
               onLoad={syncDisplaySize}
               alt="preview"
             />
@@ -432,11 +465,20 @@ export function ImageCropper({
           </div>
           <div className="cropper-angle">{rotation.toFixed(1)}°</div>
           <div className="cropper-button-row">
-            {rotation !== 0 && (
+            <button className="cropper-button" onClick={handleRotate90} disabled={!can90}>
+              Rotate 90°
+            </button>
+            <button className="cropper-button" onClick={handleRotate180}>
+              Rotate 180°
+            </button>
+          </div>
+          <div className="cropper-button-row">
+            {(rotation !== 0 || baseRotation !== 0) && (
               <button
                 className="cropper-button"
                 onClick={() => {
                   setRotation(0);
+                  setBaseRotation(0);
                   setCropSize(null);
                   setCropOffset({ x: 0, y: 0 });
                 }}
