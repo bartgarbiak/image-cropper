@@ -46,9 +46,13 @@ cropper/
 
 | Prop            | Type                  | Default            | Description                                     |
 | --------------- | --------------------- | ------------------ | ----------------------------------------------- |
+| `imageSrc`      | `string \| null`       | `null`             | Image source URL or data URL to crop.            |
 | `minCropWidth`  | `number`              | `250`              | Minimum crop rectangle width in pixels.          |
 | `minCropHeight` | `number`              | `250`              | Minimum crop rectangle height in pixels.         |
 | `labels`        | `ImageCropperLabels`  | See below          | Override any UI label string.                    |
+| `onCrop`        | `(data: CropData) => void` | `undefined`   | Called when crop changes.                        |
+| `onRotate`      | `(data: RotationData) => void` | `undefined` | Called when rotation changes.                  |
+| `onChange`      | `(data: ChangeData) => void` | `undefined` | Called on any crop or rotation change.          |
 
 #### `ImageCropperLabels`
 
@@ -63,20 +67,73 @@ All fields are optional. Any omitted key falls back to the English default.
 | `resetCrop`      | `string` | `"Reset Crop"`                     |
 | `emptyState`     | `string` | `"Open an image to get started"`   |
 
+#### Event Data Types
+
+**`CropData`**
+```ts
+{
+  x: number;      // horizontal position of top-left corner
+  y: number;      // vertical position of top-left corner
+  width: number;  // width of the cropped area
+  height: number; // height of the cropped area
+}
+```
+
+**`RotationData`**
+```ts
+{
+  rotation: number;      // fine-tune rotation (-45° to 45°)
+  baseRotation: number;  // coarse rotation (0°, 90°, 180°, 270°)
+}
+```
+
+**`ChangeData`**
+```ts
+{
+  action: 'rotate' | 'crop';
+  crop: CropData;
+  rotation: RotationData;
+}
+```
+
 ### Usage
 
 ```tsx
 import { ImageCropper } from '@bartgarbiak/image-cropper';
 import '@bartgarbiak/image-cropper/style.css';
+import { useState } from 'react';
 
-// Defaults
-<ImageCropper />
+function MyComponent() {
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
 
-// Custom min crop size
-<ImageCropper minCropWidth={100} minCropHeight={100} />
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) setImageSrc(URL.createObjectURL(file));
+  };
 
-// Custom labels (e.g. i18n)
+  return (
+    <>
+      <input type="file" accept="image/*" onChange={handleFileUpload} />
+      <ImageCropper
+        imageSrc={imageSrc}
+        onCrop={(crop) => console.log('Crop:', crop)}
+        onRotate={(rotation) => console.log('Rotation:', rotation)}
+        onChange={(data) => console.log('Change:', data)}
+      />
+    </>
+  );
+}
+```
+
+**Custom min crop size**
+```tsx
+<ImageCropper imageSrc={imageSrc} minCropWidth={100} minCropHeight={100} />
+```
+
+**Custom labels (i18n)**
+```tsx
 <ImageCropper
+  imageSrc={imageSrc}
   labels={{
     rotation: 'Rotación',
     rotate90: 'Girar 90°',
@@ -161,9 +218,13 @@ All types are exported from the package entry point.
 
 ```ts
 interface ImageCropperProps {
+  imageSrc?: string | null;
   minCropWidth?: number;
   minCropHeight?: number;
   labels?: ImageCropperLabels;
+  onCrop?: (data: CropData) => void;
+  onRotate?: (data: RotationData) => void;
+  onChange?: (data: ChangeData) => void;
 }
 
 interface ImageCropperLabels {
@@ -173,6 +234,24 @@ interface ImageCropperLabels {
   resetRotation?: string;
   resetCrop?: string;
   emptyState?: string;
+}
+
+interface CropData {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface RotationData {
+  rotation: number;
+  baseRotation: number;
+}
+
+interface ChangeData {
+  action: 'rotate' | 'crop';
+  crop: CropData;
+  rotation: RotationData;
 }
 
 interface Size  { width: number; height: number; }

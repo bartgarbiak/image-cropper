@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './ImageCropper.css';
-import type { CornerPos, DragMode, Size, Point, ImageCropperLabels, ImageCropperProps } from './ImageCropper.types';
+import type { CornerPos, DragMode, Size, Point, ImageCropperLabels, ImageCropperProps, CropData, RotationData, ChangeData } from './ImageCropper.types';
 
 /* ───────────────────────── Default labels ───────────────────────── */
 
@@ -23,16 +23,20 @@ import { clampOffset } from './helpers/clampOffset';
 /* ───────────────────────── Component ────────────────────────────── */
 
 export function ImageCropper({
+  imageSrc: externalImageSrc,
   minCropWidth = 250,
   minCropHeight = 250,
   labels: userLabels,
+  onCrop,
+  onRotate,
+  onChange,
 }: ImageCropperProps) {
   const labels = useMemo<Required<ImageCropperLabels>>(
     () => ({ ...defaultLabels, ...userLabels }),
     [userLabels],
   );
 
-  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const imageSrc = externalImageSrc;
   const [rotation, setRotation] = useState(0);
   const [displaySize, setDisplaySize] = useState<Size>({ width: 0, height: 0 });
   const [cropSize, setCropSize] = useState<Size | null>(null);
@@ -42,21 +46,6 @@ export function ImageCropper({
 
   const imgRef = useRef<HTMLImageElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
-
-  /* ── Upload ── */
-  const handleUpload = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      if (imageSrc) URL.revokeObjectURL(imageSrc);
-      setImageSrc(URL.createObjectURL(file));
-      setRotation(0);
-      setBaseRotation(0);
-      setCropSize(null);
-      setCropOffset({ x: 0, y: 0 });
-    },
-    [imageSrc],
-  );
 
   /* ── Track rendered image size ── */
   const syncDisplaySize = useCallback(() => {
@@ -75,6 +64,14 @@ export function ImageCropper({
     ro.observe(el);
     return () => ro.disconnect();
   }, [imageSrc, syncDisplaySize]);
+
+  /* ── Reset when imageSrc changes ── */
+  useEffect(() => {
+    setRotation(0);
+    setBaseRotation(0);
+    setCropSize(null);
+    setCropOffset({ x: 0, y: 0 });
+  }, [imageSrc]);
 
   /* ── Effective image dimensions (swap W/H for 90°/270° base rotation) ── */
   const effectiveDims = useMemo<Size>(() => {
@@ -216,6 +213,35 @@ export function ImageCropper({
     [cropOffset, effectiveCrop, effectiveDims, rotation],
   );
 
+  /* ── Current crop data ── */
+  const cropData = useMemo<CropData>(
+    () => ({
+      x: effectiveOffset.x - effectiveCrop.width / 2,
+      y: effectiveOffset.y - effectiveCrop.height / 2,
+      width: effectiveCrop.width,
+      height: effectiveCrop.height,
+    }),
+    [effectiveOffset, effectiveCrop],
+  );
+
+  const rotationData = useMemo<RotationData>(
+    () => ({ rotation, baseRotation }),
+    [rotation, baseRotation],
+  );
+
+  /* ── Emit events ── */
+  useEffect(() => {
+    if (!imageSrc) return;
+    onCrop?.(cropData);
+    onChange?.({ action: 'crop', crop: cropData, rotation: rotationData });
+  }, [cropData, imageSrc]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!imageSrc) return;
+    onRotate?.(rotationData);
+    onChange?.({ action: 'rotate', crop: cropData, rotation: rotationData });
+  }, [rotationData, imageSrc]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ── Resets ── */
   const resetCrop = useCallback(() => {
     setCropSize(null);
@@ -256,8 +282,6 @@ export function ImageCropper({
   /* ── Render ── */
   return (
     <div className="cropper-container">
-      <input type="file" accept="image/*" onChange={handleUpload} />
-
       <div className="cropper-workspace" ref={workspaceRef}>
         {imageSrc ? (
           <>
