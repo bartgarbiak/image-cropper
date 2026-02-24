@@ -1,6 +1,6 @@
 # ImageCropper — Documentation
 
-A React component for interactive image rotation and cropping. Built with TypeScript, React 18, styled-components, and Vite.
+A React component for interactive image rotation and cropping. Built with TypeScript, React 18, pure CSS, and Vite.
 
 ---
 
@@ -21,18 +21,21 @@ Requires **Node ≥ 18**.
 
 ```
 cropper/
-├── index.html                       # Entry HTML (loads src/main.tsx)
 ├── package.json
 ├── tsconfig.json
+├── tsconfig.build.json
 ├── vite.config.js
-├── docs/
-│   └── README.md                    # ← you are here
+├── README.md                        # ← you are here
+├── demo/                            # Demo app
+│   ├── index.html
+│   ├── main.tsx
+│   └── App.tsx
 └── src/
-    ├── main.tsx                     # ReactDOM root
-    ├── App.tsx                      # Global styles + renders <ImageCropper>
-    ├── vite-env.d.ts                # Vite client type reference
+    ├── index.ts                     # Barrel exports
     └── components/
-        └── ImageCropper.tsx         # Core component (all logic)
+        ├── ImageCropper.tsx          # Core component (all logic)
+        ├── ImageCropper.types.ts     # Type definitions
+        └── ImageCropper.css          # Component styles
 ```
 
 ---
@@ -41,18 +44,48 @@ cropper/
 
 ### Props
 
-| Prop            | Type     | Default | Description                                     |
-| --------------- | -------- | ------- | ----------------------------------------------- |
-| `minCropWidth`  | `number` | `250`   | Minimum crop rectangle width in pixels.          |
-| `minCropHeight` | `number` | `250`   | Minimum crop rectangle height in pixels.         |
+| Prop            | Type                  | Default            | Description                                     |
+| --------------- | --------------------- | ------------------ | ----------------------------------------------- |
+| `minCropWidth`  | `number`              | `250`              | Minimum crop rectangle width in pixels.          |
+| `minCropHeight` | `number`              | `250`              | Minimum crop rectangle height in pixels.         |
+| `labels`        | `ImageCropperLabels`  | See below          | Override any UI label string.                    |
+
+#### `ImageCropperLabels`
+
+All fields are optional. Any omitted key falls back to the English default.
+
+| Key              | Type     | Default                            |
+| ---------------- | -------- | ---------------------------------- |
+| `rotation`       | `string` | `"Rotation"`                       |
+| `rotate90`       | `string` | `"Rotate 90°"`                     |
+| `rotate180`      | `string` | `"Rotate 180°"`                    |
+| `resetRotation`  | `string` | `"Reset Rotation"`                 |
+| `resetCrop`      | `string` | `"Reset Crop"`                     |
+| `emptyState`     | `string` | `"Open an image to get started"`   |
 
 ### Usage
 
 ```tsx
-import ImageCropper from './components/ImageCropper';
+import { ImageCropper } from '@bartgarbiak/image-cropper';
+import '@bartgarbiak/image-cropper/style.css';
 
-<ImageCropper />                          // defaults: 250 × 250 min
+// Defaults
+<ImageCropper />
+
+// Custom min crop size
 <ImageCropper minCropWidth={100} minCropHeight={100} />
+
+// Custom labels (e.g. i18n)
+<ImageCropper
+  labels={{
+    rotation: 'Rotación',
+    rotate90: 'Girar 90°',
+    rotate180: 'Girar 180°',
+    resetRotation: 'Restablecer rotación',
+    resetCrop: 'Restablecer recorte',
+    emptyState: 'Abra una imagen para comenzar',
+  }}
+/>
 ```
 
 ---
@@ -84,9 +117,13 @@ Resizing resets the crop offset to the centre.
 
 Clicking and dragging inside the crop area moves the entire crop rectangle. The offset is clamped in real-time so that every corner of the crop stays within the rotated image boundary (`clampOffset`).
 
+### 90° / 180° Rotation
+
+Two buttons allow coarse rotation in 90° and 180° increments. The 90° button is automatically disabled when the resulting (swapped) image dimensions would violate the minimum crop size. Each coarse rotation resets the fine-tune slider and crop to their defaults.
+
 ### Reset Buttons
 
-- **Reset Rotation** — sets rotation to 0° and resets crop size + position.
+- **Reset Rotation** — sets both coarse and fine rotation to 0° and resets crop size + position.
 - **Reset Crop** — restores the default (full-image) crop size and centres it.
 
 ---
@@ -120,16 +157,22 @@ where $W \times H$ is the displayed image size and $\theta$ is the rotation angl
 
 ## Types
 
+All types are exported from the package entry point.
+
 ```ts
-type CornerPos = 'tl' | 'tr' | 'bl' | 'br';
-
-type DragMode =
-  | { kind: 'corner'; corner: CornerPos }
-  | { kind: 'move'; startX: number; startY: number; startOffset: Point };
-
-interface Props {
+interface ImageCropperProps {
   minCropWidth?: number;
   minCropHeight?: number;
+  labels?: ImageCropperLabels;
+}
+
+interface ImageCropperLabels {
+  rotation?: string;
+  rotate90?: string;
+  rotate180?: string;
+  resetRotation?: string;
+  resetCrop?: string;
+  emptyState?: string;
 }
 
 interface Size  { width: number; height: number; }
@@ -143,9 +186,9 @@ interface Point { x: number;     y: number;      }
 | Layer       | Library                |
 | ----------- | ---------------------- |
 | UI          | React 18               |
-| Styling     | styled-components 6    |
+| Styling     | Pure CSS (custom props) |
 | Language    | TypeScript 5 (strict)  |
-| Bundler     | Vite 4                 |
+| Bundler     | Vite 4 (library mode)  |
 
 ---
 

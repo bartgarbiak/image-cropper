@@ -1,28 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './ImageCropper.css';
+import type { CornerPos, DragMode, Size, Point, ImageCropperLabels, ImageCropperProps } from './ImageCropper.types';
 
-/* ───────────────────────── Types ────────────────────────────────── */
+/* ───────────────────────── Default labels ───────────────────────── */
 
-type CornerPos = 'tl' | 'tr' | 'bl' | 'br';
-
-type DragMode =
-  | { kind: 'corner'; corner: CornerPos }
-  | { kind: 'move'; startX: number; startY: number; startOffset: Point };
-
-export interface ImageCropperProps {
-  minCropWidth?: number;
-  minCropHeight?: number;
-}
-
-export interface Size {
-  width: number;
-  height: number;
-}
-
-export interface Point {
-  x: number;
-  y: number;
-}
+const defaultLabels: Required<ImageCropperLabels> = {
+  rotation: 'Rotation',
+  rotate90: 'Rotate 90°',
+  rotate180: 'Rotate 180°',
+  resetRotation: 'Reset Rotation',
+  resetCrop: 'Reset Crop',
+  emptyState: 'Open an image to get started',
+};
 
 /* ───────────────────────── Geometry helpers ─────────────────────── */
 
@@ -184,7 +173,13 @@ function clampOffset(
 export function ImageCropper({
   minCropWidth = 250,
   minCropHeight = 250,
+  labels: userLabels,
 }: ImageCropperProps) {
+  const labels = useMemo<Required<ImageCropperLabels>>(
+    () => ({ ...defaultLabels, ...userLabels }),
+    [userLabels],
+  );
+
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [rotation, setRotation] = useState(0);
   const [displaySize, setDisplaySize] = useState<Size>({ width: 0, height: 0 });
@@ -442,14 +437,14 @@ export function ImageCropper({
           </>
         ) : (
           <div className="cropper-empty">
-            <span>Open an image to get started</span>
+            <span>{labels.emptyState}</span>
           </div>
         )}
       </div>
 
       {imageSrc && (
         <div className="cropper-controls">
-          <div className="cropper-label">Rotation</div>
+          <div className="cropper-label">{labels.rotation}</div>
           <div className="cropper-slider-row">
             <span className="cropper-range-label">-{maxRotation}°</span>
             <input
@@ -466,10 +461,10 @@ export function ImageCropper({
           <div className="cropper-angle">{rotation.toFixed(1)}°</div>
           <div className="cropper-button-row">
             <button className="cropper-button" onClick={handleRotate90} disabled={!can90}>
-              Rotate 90°
+              {labels.rotate90}
             </button>
             <button className="cropper-button" onClick={handleRotate180}>
-              Rotate 180°
+              {labels.rotate180}
             </button>
           </div>
           <div className="cropper-button-row">
@@ -483,11 +478,11 @@ export function ImageCropper({
                   setCropOffset({ x: 0, y: 0 });
                 }}
               >
-                Reset Rotation
+                {labels.resetRotation}
               </button>
             )}
             {(cropSize || cropOffset.x !== 0 || cropOffset.y !== 0) && (
-              <button className="cropper-button" onClick={resetCrop}>Reset Crop</button>
+              <button className="cropper-button" onClick={resetCrop}>{labels.resetCrop}</button>
             )}
           </div>
         </div>
