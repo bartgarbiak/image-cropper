@@ -41,6 +41,21 @@ export interface ChangeData {
   rotation: RotationData;
 }
 
+export interface CropperState {
+  rotation: number;
+  baseRotation: number;
+  cropSize: Size | null;
+  cropOffset: Point;
+}
+
+export interface ImageCropperRef {
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  getHistory: () => { past: CropperState[]; present: CropperState; future: CropperState[] };
+}
+
 export interface ImageCropperProps {
   imageSrc?: string | null;
   minCropWidth?: number;
@@ -49,4 +64,5 @@ export interface ImageCropperProps {
   onCrop?: (data: CropData) => void;
   onRotate?: (data: RotationData) => void;
   onChange?: (data: ChangeData) => void;
+  onHistoryChange?: (canUndo: boolean, canRedo: boolean) => void;
 }

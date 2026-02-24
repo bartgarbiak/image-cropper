@@ -30,12 +30,23 @@ cropper/
 │   ├── index.html
 │   ├── main.tsx
 │   └── App.tsx
+├── test/                            # Vitest test suites
+│   ├── helpers.spec.ts
+│   ├── useHistory.spec.ts
+│   └── ImageCropper.spec.tsx
 └── src/
     ├── index.ts                     # Barrel exports
+    ├── utils/
+    │   └── useHistory.ts            # Undo/redo history hook
     └── components/
-        ├── ImageCropper.tsx          # Core component (all logic)
+        ├── ImageCropper.tsx          # Core component
         ├── ImageCropper.types.ts     # Type definitions
-        └── ImageCropper.css          # Component styles
+        ├── ImageCropper.css          # Component styles
+        └── helpers/                  # Geometry helpers
+            ├── computeCropSize.ts
+            ├── clampCropDims.ts
+            ├── findMaxRotation.ts
+            └── clampOffset.ts
 ```
 
 ---
@@ -44,15 +55,17 @@ cropper/
 
 ### Props
 
-| Prop            | Type                  | Default            | Description                                     |
-| --------------- | --------------------- | ------------------ | ----------------------------------------------- |
-| `imageSrc`      | `string \| null`       | `null`             | Image source URL or data URL to crop.            |
-| `minCropWidth`  | `number`              | `250`              | Minimum crop rectangle width in pixels.          |
-| `minCropHeight` | `number`              | `250`              | Minimum crop rectangle height in pixels.         |
-| `labels`        | `ImageCropperLabels`  | See below          | Override any UI label string.                    |
-| `onCrop`        | `(data: CropData) => void` | `undefined`   | Called when crop changes.                        |
-| `onRotate`      | `(data: RotationData) => void` | `undefined` | Called when rotation changes.                  |
-| `onChange`      | `(data: ChangeData) => void` | `undefined` | Called on any crop or rotation change.          |
+| Prop               | Type                                    | Default   | Description                                                              |
+| ------------------ | --------------------------------------- | --------- | ------------------------------------------------------------------------ |
+| `imageSrc`         | `string \| null`                        | `null`    | Image source URL or data URL to crop.                                    |
+| `minCropWidth`     | `number`                                | `250`     | Minimum crop rectangle width in pixels.                                  |
+| `minCropHeight`    | `number`                                | `250`     | Minimum crop rectangle height in pixels.                                 |
+| `labels`           | `ImageCropperLabels`                    | See below | Override any UI label string.                                            |
+| `onCrop`           | `(data: CropData) => void`              | —         | Fired after the user stops cropping for 500 ms.                          |
+| `onRotate`         | `(data: RotationData) => void`          | —         | Fired after the user stops rotating for 500 ms.                          |
+| `onChange`         | `(data: ChangeData) => void`            | —         | Fired after any crop or rotation commit (same 500 ms debounce).          |
+| `onHistoryChange`  | `(canUndo: boolean, canRedo: boolean) => void` | — | Fired whenever the undo/redo availability changes. Use this to keep external buttons in sync. |
+| `ref`              | `React.Ref<ImageCropperRef>`            | —         | Forward ref giving access to `undo`, `redo`, `canUndo`, `canRedo`, `getHistory`. |
 
 #### `ImageCropperLabels`
 
@@ -99,12 +112,15 @@ All fields are optional. Any omitted key falls back to the English default.
 ### Usage
 
 ```tsx
-import { ImageCropper } from '@bartgarbiak/image-cropper';
+import { ImageCropper, type ImageCropperRef } from '@bartgarbiak/image-cropper';
 import '@bartgarbiak/image-cropper/style.css';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 function MyComponent() {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const cropperRef = useRef<ImageCropperRef>(null);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -114,8 +130,14 @@ function MyComponent() {
   return (
     <>
       <input type="file" accept="image/*" onChange={handleFileUpload} />
+
+      <button onClick={() => cropperRef.current?.undo()} disabled={!canUndo}>Undo</button>
+      <button onClick={() => cropperRef.current?.redo()} disabled={!canRedo}>Redo</button>
+
       <ImageCropper
+        ref={cropperRef}
         imageSrc={imageSrc}
+        onHistoryChange={(u, r) => { setCanUndo(u); setCanRedo(r); }}
         onCrop={(crop) => console.log('Crop:', crop)}
         onRotate={(rotation) => console.log('Rotation:', rotation)}
         onChange={(data) => console.log('Change:', data)}
@@ -124,6 +146,8 @@ function MyComponent() {
   );
 }
 ```
+
+> **Note on event timing** — `onCrop`, `onRotate`, and `onChange` are debounced: they fire only after the user has stopped interacting (dragging a corner, moving the crop, or adjusting the slider) for **500 ms**. Discrete button actions (Rotate 90°, Rotate 180°, Reset Rotation, Reset Crop) commit immediately without the delay. This same debounce controls when undo/redo history entries are created, so every entry represents a "resting" state rather than a frame in the middle of a drag.
 
 **Custom min crop size**
 ```tsx
@@ -178,6 +202,39 @@ Clicking and dragging inside the crop area moves the entire crop rectangle. The 
 
 Two buttons allow coarse rotation in 90° and 180° increments. The 90° button is automatically disabled when the resulting (swapped) image dimensions would violate the minimum crop size. Each coarse rotation resets the fine-tune slider and crop to their defaults.
 
+### Undo / Redo
+
+Every "settled" interaction is pushed to a history stack. An interaction is considered settled when the user stops acting for **500 ms** (slider, drag corner, drag move). Discrete actions (Rotate 90°, 180°, Reset Rotation, Reset Crop) commit to history immediately.
+
+Control undo/redo from outside the component via a forwarded ref:
+
+```tsx
+const ref = useRef<ImageCropperRef>(null);
+
+// call these from external buttons
+ref.current?.undo();
+ref.current?.redo();
+
+// read availability
+ref.current?.canUndo; // boolean
+ref.current?.canRedo; // boolean
+
+// inspect the full stack
+ref.current?.getHistory(); // { past, present, future }
+```
+
+Use `onHistoryChange` to keep external UI (e.g. toolbar buttons) in sync without polling the ref:
+
+```tsx
+<ImageCropper
+  ref={ref}
+  onHistoryChange={(canUndo, canRedo) => {
+    setCanUndo(canUndo);
+    setCanRedo(canRedo);
+  }}
+/>
+```
+
 ### Reset Buttons
 
 - **Reset Rotation** — sets both coarse and fine rotation to 0° and resets crop size + position.
@@ -225,6 +282,28 @@ interface ImageCropperProps {
   onCrop?: (data: CropData) => void;
   onRotate?: (data: RotationData) => void;
   onChange?: (data: ChangeData) => void;
+  /** Fired when canUndo / canRedo change — use this to drive external buttons. */
+  onHistoryChange?: (canUndo: boolean, canRedo: boolean) => void;
+}
+
+/** Exposed via forwardRef — access with useRef<ImageCropperRef>(null) */
+interface ImageCropperRef {
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  getHistory: () => {
+    past: CropperState[];
+    present: CropperState;
+    future: CropperState[];
+  };
+}
+
+interface CropperState {
+  rotation: number;
+  baseRotation: number;
+  cropSize: { width: number; height: number } | null;
+  cropOffset: { x: number; y: number };
 }
 
 interface ImageCropperLabels {

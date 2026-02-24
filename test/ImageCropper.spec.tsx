@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { createRef } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, act } from '@testing-library/react';
 import { ImageCropper } from '../dist/index.mjs';
+import type { ImageCropperRef } from '../dist/index.mjs';
 
 describe('<ImageCropper />', () => {
   afterEach(() => {
@@ -49,5 +50,46 @@ describe('<ImageCropper />', () => {
       />,
     );
     expect(screen.getByText('Open an image to get started')).toBeDefined();
+  });
+
+  // ── Ref / undo-redo ──────────────────────────────────────────────
+
+  it('exposes ref API with undo/redo/canUndo/canRedo/getHistory', () => {
+    const ref = createRef<ImageCropperRef>();
+    render(<ImageCropper imageSrc={null} ref={ref} />);
+
+    expect(typeof ref.current?.undo).toBe('function');
+    expect(typeof ref.current?.redo).toBe('function');
+    expect(typeof ref.current?.getHistory).toBe('function');
+    expect(ref.current?.canUndo).toBe(false);
+    expect(ref.current?.canRedo).toBe(false);
+  });
+
+  it('getHistory returns empty past/future initially', () => {
+    const ref = createRef<ImageCropperRef>();
+    render(<ImageCropper imageSrc={null} ref={ref} />);
+
+    const h = ref.current?.getHistory();
+    expect(h?.past).toHaveLength(0);
+    expect(h?.future).toHaveLength(0);
+  });
+
+  it('calling undo/redo on empty history does not throw', () => {
+    const ref = createRef<ImageCropperRef>();
+    render(<ImageCropper imageSrc={null} ref={ref} />);
+
+    expect(() => {
+      act(() => ref.current?.undo());
+      act(() => ref.current?.redo());
+    }).not.toThrow();
+  });
+
+  // ── onHistoryChange ──────────────────────────────────────────────
+
+  it('calls onHistoryChange(false, false) on initial mount', () => {
+    const onHistoryChange = vi.fn();
+    render(<ImageCropper imageSrc={null} onHistoryChange={onHistoryChange} />);
+    // First call should signal no undo, no redo
+    expect(onHistoryChange).toHaveBeenCalledWith(false, false);
   });
 });

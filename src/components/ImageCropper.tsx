@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import './ImageCropper.css';
-import type { CornerPos, DragMode, Size, Point, ImageCropperLabels, ImageCropperProps, CropData, RotationData, ChangeData } from './ImageCropper.types';
+import type { CornerPos, DragMode, Size, Point, ImageCropperLabels, ImageCropperProps, CropData, RotationData, ChangeData, CropperState, ImageCropperRef } from './ImageCropper.types';
+import { useHistory } from '../utils/useHistory';
 
 /* ───────────────────────── Default labels ───────────────────────── */
 
@@ -22,27 +23,59 @@ import { clampOffset } from './helpers/clampOffset';
 
 /* ───────────────────────── Component ────────────────────────────── */
 
-export function ImageCropper({
-  imageSrc: externalImageSrc,
-  minCropWidth = 250,
-  minCropHeight = 250,
-  labels: userLabels,
-  onCrop,
-  onRotate,
-  onChange,
-}: ImageCropperProps) {
+export const ImageCropper = forwardRef<ImageCropperRef, ImageCropperProps>((
+  {
+    imageSrc: externalImageSrc,
+    minCropWidth = 250,
+    minCropHeight = 250,
+    labels: userLabels,
+    onCrop,
+    onRotate,
+    onChange,
+    onHistoryChange,
+  },
+  ref,
+) => {
   const labels = useMemo<Required<ImageCropperLabels>>(
     () => ({ ...defaultLabels, ...userLabels }),
     [userLabels],
   );
 
   const imageSrc = externalImageSrc;
-  const [rotation, setRotation] = useState(0);
   const [displaySize, setDisplaySize] = useState<Size>({ width: 0, height: 0 });
-  const [cropSize, setCropSize] = useState<Size | null>(null);
-  const [cropOffset, setCropOffset] = useState<Point>({ x: 0, y: 0 });
   const [drag, setDrag] = useState<DragMode | null>(null);
-  const [baseRotation, setBaseRotation] = useState(0);
+
+  const history = useHistory<CropperState>({
+    rotation: 0,
+    baseRotation: 0,
+    cropSize: null,
+    cropOffset: { x: 0, y: 0 },
+  });
+
+  const { rotation, baseRotation, cropSize, cropOffset } = history.state;
+
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const updateState = useCallback(
+    (updates: Partial<CropperState>) => {
+      history.stage({ ...history.state, ...updates });
+      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = setTimeout(() => {
+        commitTimerRef.current = null;
+        history.commit();
+      }, 500);
+    },
+    [history],
+  );
+
+  // For discrete actions (buttons) — commit immediately, bypassing the debounce
+  const commitNow = useCallback(
+    (updates: Partial<CropperState>) => {
+      if (commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null; }
+      history.commit({ ...history.state, ...updates });
+    },
+    [history],
+  );
 
   const imgRef = useRef<HTMLImageElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -67,11 +100,14 @@ export function ImageCropper({
 
   /* ── Reset when imageSrc changes ── */
   useEffect(() => {
-    setRotation(0);
-    setBaseRotation(0);
-    setCropSize(null);
-    setCropOffset({ x: 0, y: 0 });
-  }, [imageSrc]);
+    if (commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null; }
+    history.reset({
+      rotation: 0,
+      baseRotation: 0,
+      cropSize: null,
+      cropOffset: { x: 0, y: 0 },
+    });
+  }, [imageSrc]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Effective image dimensions (swap W/H for 90°/270° base rotation) ── */
   const effectiveDims = useMemo<Size>(() => {
@@ -140,14 +176,13 @@ export function ImageCropper({
         const dy = e.clientY - drag.startY;
         const rawX = drag.startOffset.x + dx;
         const rawY = drag.startOffset.y + dy;
-        setCropOffset(
-          clampOffset(
-            rawX, rawY,
-            effectiveCrop.width, effectiveCrop.height,
-            effectiveDims.width, effectiveDims.height,
-            rotation,
-          ),
+        const newOffset = clampOffset(
+          rawX, rawY,
+          effectiveCrop.width, effectiveCrop.height,
+          effectiveDims.width, effectiveDims.height,
+          rotation,
         );
+        updateState({ cropOffset: newOffset });
         return;
       }
 
@@ -166,14 +201,12 @@ export function ImageCropper({
       const desiredW = Math.max(mx * 2, 20);
       const desiredH = Math.max(my * 2, 20);
 
-      setCropSize(
-        clampCropDims(
-          desiredW, desiredH,
-          effectiveDims.width, effectiveDims.height,
-          rotation, minCropWidth, minCropHeight,
-        ),
+      const newCropSize = clampCropDims(
+        desiredW, desiredH,
+        effectiveDims.width, effectiveDims.height,
+        rotation, minCropWidth, minCropHeight,
       );
-      setCropOffset({ x: 0, y: 0 });
+      updateState({ cropSize: newCropSize, cropOffset: { x: 0, y: 0 } });
     };
 
     const handleMouseUp = () => setDrag(null);
@@ -186,7 +219,7 @@ export function ImageCropper({
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-  }, [drag, effectiveDims, rotation, effectiveCrop, minCropWidth, minCropHeight]);
+  }, [drag, effectiveDims, rotation, effectiveCrop, minCropWidth, minCropHeight, updateState]);
 
   /* ── Max rotation ── */
   const maxRotation = useMemo(
@@ -198,8 +231,11 @@ export function ImageCropper({
   );
 
   useEffect(() => {
-    setRotation((prev) => Math.max(-maxRotation, Math.min(maxRotation, prev)));
-  }, [maxRotation]);
+    const clamped = Math.max(-maxRotation, Math.min(maxRotation, rotation));
+    if (clamped !== rotation) {
+      updateState({ rotation: clamped });
+    }
+  }, [maxRotation, rotation, updateState]);
 
   /* ── Clamped offset ── */
   const effectiveOffset = useMemo<Point>(
@@ -229,31 +265,59 @@ export function ImageCropper({
     [rotation, baseRotation],
   );
 
-  /* ── Emit events ── */
+  /* ── Emit events on commit (debounced interactions, undo/redo, instant actions) ── */
+  const prevCommittedRef = useRef<CropperState | null>(null);
   useEffect(() => {
     if (!imageSrc) return;
+    const prev = prevCommittedRef.current;
+    prevCommittedRef.current = history.committed;
+    const rotChanged =
+      !prev ||
+      history.committed.rotation !== prev.rotation ||
+      history.committed.baseRotation !== prev.baseRotation;
     onCrop?.(cropData);
-    onChange?.({ action: 'crop', crop: cropData, rotation: rotationData });
-  }, [cropData, imageSrc]); // eslint-disable-line react-hooks/exhaustive-deps
+    onRotate?.(rotationData);
+    onChange?.({
+      action: rotChanged ? 'rotate' : 'crop',
+      crop: cropData,
+      rotation: rotationData,
+    });
+  }, [history.committed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!imageSrc) return;
-    onRotate?.(rotationData);
-    onChange?.({ action: 'rotate', crop: cropData, rotation: rotationData });
-  }, [rotationData, imageSrc]); // eslint-disable-line react-hooks/exhaustive-deps
+    onHistoryChange?.(history.canUndo, history.canRedo);
+  }, [history.canUndo, history.canRedo, onHistoryChange]);
+
+  /* ── Expose ref API ── */
+  useImperativeHandle(
+    ref,
+    () => ({
+      undo: () => {
+        if (commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null; }
+        history.undo();
+      },
+      redo: () => {
+        if (commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null; }
+        history.redo();
+      },
+      canUndo: history.canUndo,
+      canRedo: history.canRedo,
+      getHistory: history.getHistory,
+    }),
+    [history],
+  );
 
   /* ── Resets ── */
   const resetCrop = useCallback(() => {
-    setCropSize(null);
-    setCropOffset({ x: 0, y: 0 });
-  }, []);
+    commitNow({ cropSize: null, cropOffset: { x: 0, y: 0 } });
+  }, [commitNow]);
 
   const handleRotationChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const newRot = parseFloat(e.target.value);
-      setRotation(newRot);
+      updateState({ rotation: newRot });
     },
-    [],
+    [updateState],
   );
 
   /* ── 90°/180° rotation ── */
@@ -266,18 +330,22 @@ export function ImageCropper({
   }, [displaySize, baseRotation, minCropWidth, minCropHeight]);
 
   const handleRotate90 = useCallback(() => {
-    setBaseRotation((prev) => (prev + 90) % 360);
-    setRotation(0);
-    setCropSize(null);
-    setCropOffset({ x: 0, y: 0 });
-  }, []);
+    commitNow({
+      baseRotation: (baseRotation + 90) % 360,
+      rotation: 0,
+      cropSize: null,
+      cropOffset: { x: 0, y: 0 },
+    });
+  }, [baseRotation, commitNow]);
 
   const handleRotate180 = useCallback(() => {
-    setBaseRotation((prev) => (prev + 180) % 360);
-    setRotation(0);
-    setCropSize(null);
-    setCropOffset({ x: 0, y: 0 });
-  }, []);
+    commitNow({
+      baseRotation: (baseRotation + 180) % 360,
+      rotation: 0,
+      cropSize: null,
+      cropOffset: { x: 0, y: 0 },
+    });
+  }, [baseRotation, commitNow]);
 
   /* ── Render ── */
   return (
@@ -348,10 +416,12 @@ export function ImageCropper({
               <button
                 className="cropper-button"
                 onClick={() => {
-                  setRotation(0);
-                  setBaseRotation(0);
-                  setCropSize(null);
-                  setCropOffset({ x: 0, y: 0 });
+                  commitNow({
+                    rotation: 0,
+                    baseRotation: 0,
+                    cropSize: null,
+                    cropOffset: { x: 0, y: 0 },
+                  });
                 }}
               >
                 {labels.resetRotation}
@@ -365,4 +435,6 @@ export function ImageCropper({
       )}
     </div>
   );
-}
+});
+
+ImageCropper.displayName = 'ImageCropper';
